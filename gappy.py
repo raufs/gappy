@@ -277,76 +277,21 @@ def split_sequence_at_gaps(sequence, gap_positions, gap_lengths):
     return fragments
 
 
-def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
+def apply_gaps(records, gap_lengths, total_length):
     """
-    Introduce gaps into genome sequences by splitting them.
+    Apply gaps to sequences and return split records with mapping data.
     
     Args:
         records: List of SeqRecord objects
-        percent_remaining: Percentage of genome that should remain (0-100)
-        alpha: Alpha parameter for beta distribution
-        beta: Beta parameter for beta distribution
-        min_size: Minimum gap size
-        max_size: Maximum gap size
+        gap_lengths: List of gap lengths to apply
+        total_length: Total length of all sequences
     
     Returns:
-        List of split SeqRecord objects (more records than input)
+        Tuple of (split_records, mapping_data)
     """
-    # Calculate total genome length
-    total_length = sum(len(record.seq) for record in records)
-    
-    if total_length == 0:
-        print("Error: Input sequences have zero total length", file=sys.stderr)
-        sys.exit(1)
-    
-    # Calculate target gap size based on percent remaining
-    target_gap_size = int(total_length * (1 - percent_remaining / 100.0))
-    
-    if target_gap_size <= 0:
-        print("Error: Percent remaining is too high (>= 100%). No gaps to introduce.", file=sys.stderr)
-        sys.exit(1)
-    
-    print(f"Total genome length: {total_length:,} bp", file=sys.stderr)
-    print(f"Target: {percent_remaining:.1f}% remaining ({int(total_length * percent_remaining / 100):,} bp)", file=sys.stderr)
-    print(f"To remove: {target_gap_size:,} bp in gaps", file=sys.stderr)
-    
-    # Sample gaps until we reach approximately the target total gap size
-    gap_lengths = []
-    current_gap_total = 0
-    
-    while current_gap_total < target_gap_size:
-        # Sample one gap length
-        new_gap = sample_gap_lengths(1, alpha, beta, min_size, max_size)[0]
-        
-        # Check if adding this gap would overshoot significantly
-        if current_gap_total + new_gap <= target_gap_size * 1.1:  # Allow 10% overshoot
-            gap_lengths.append(new_gap)
-            current_gap_total += new_gap
-        else:
-            # If we're close enough, stop
-            if current_gap_total >= target_gap_size * 0.9:  # Within 10% of target
-                break
-            # Otherwise, sample a smaller gap to finish
-            remaining = target_gap_size - current_gap_total
-            final_gap = max(min_size, min(remaining, max_size))
-            gap_lengths.append(final_gap)
-            current_gap_total += final_gap
-            break
-    
     num_gaps = len(gap_lengths)
-    actual_percent_remaining = ((total_length - current_gap_total) / total_length) * 100
-    
-    print(f"Introducing {num_gaps} gaps...", file=sys.stderr)
-    print(f"Gap length statistics:", file=sys.stderr)
-    print(f"  Min: {min(gap_lengths)} bp", file=sys.stderr)
-    print(f"  Max: {max(gap_lengths)} bp", file=sys.stderr)
-    print(f"  Mean: {np.mean(gap_lengths):.1f} bp", file=sys.stderr)
-    print(f"  Median: {np.median(gap_lengths):.1f} bp", file=sys.stderr)
-    print(f"  Total gap length: {sum(gap_lengths):,} bp", file=sys.stderr)
-    print(f"  Actual genome remaining: {actual_percent_remaining:.2f}%", file=sys.stderr)
     
     # Sample random gap positions across the entire genome
-    # (not proportionally - gaps fall randomly wherever they may)
     genome_gap_positions = sorted(random.sample(range(1, total_length), min(num_gaps, total_length - 1)))
     
     # Map genome positions to sequence-specific positions
@@ -367,12 +312,14 @@ def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
     
     # Apply gaps to each sequence
     split_records = []
+    mapping_data = []
     
     for idx, record in enumerate(records):
         if not seq_gaps[idx]:
             # No gaps in this sequence, keep as is
             split_records.append(record)
-            print(f"  {record.id}: {len(record.seq):,} bp -> 1 contig (no gaps)", file=sys.stderr)
+            # Add mapping for entire unchanged sequence
+            mapping_data.append((record.id, 1, len(record.seq), record.id, 1, len(record.seq)))
             continue
         
         # Extract positions and lengths for this sequence
@@ -381,8 +328,14 @@ def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
         # Split sequence at gap positions
         fragments = split_sequence_at_gaps(record.seq, positions, seq_gap_lengths)
         
+        # Track original positions for mapping
+        gaps_with_pos = sorted(zip(positions, seq_gap_lengths))
+        
+        # Calculate fragment ranges in original sequence
+        orig_start = 1
+        new_pos = 1
+        
         # Create new records for each fragment
-        total_fragment_length = 0
         for i, fragment in enumerate(fragments):
             fragment_id = f"{record.id}_{i}"
             fragment_record = SeqRecord(
@@ -391,11 +344,138 @@ def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
                 description=f"Split from {record.id} (fragment {i+1}/{len(fragments)})"
             )
             split_records.append(fragment_record)
-            total_fragment_length += len(fragment)
-        
-        print(f"  {record.id}: {len(record.seq):,} bp -> {len(fragments)} contigs, {total_fragment_length:,} bp total ({len(seq_gaps[idx])} gaps)", file=sys.stderr)
+            
+            # Determine original coordinates for this fragment
+            fragment_len = len(fragment)
+            orig_end = orig_start + fragment_len - 1
+            new_end = new_pos + fragment_len - 1
+            
+            # Add mapping entry
+            mapping_data.append((record.id, orig_start, orig_end, fragment_id, new_pos, new_end))
+            
+            # Update positions for next fragment
+            if i < len(gaps_with_pos):
+                gap_start, gap_len = gaps_with_pos[i]
+                orig_start = gap_start + gap_len
+            new_pos = 1
     
-    return split_records
+    return split_records, mapping_data
+
+
+def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
+    """
+    Introduce gaps into genome sequences by splitting them.
+    
+    Args:
+        records: List of SeqRecord objects
+        percent_remaining: Percentage of genome that should remain (0-100)
+        alpha: Alpha parameter for beta distribution
+        beta: Beta parameter for beta distribution
+        min_size: Minimum gap size
+        max_size: Maximum gap size
+    
+    Returns:
+        Tuple of (split_records, mapping_data)
+        - split_records: List of split SeqRecord objects (more records than input)
+        - mapping_data: List of tuples (orig_seq_id, orig_start, orig_end, new_seq_id, new_start, new_end)
+    """
+    # Calculate total genome length
+    total_length = sum(len(record.seq) for record in records)
+    
+    if total_length == 0:
+        print("Error: Input sequences have zero total length", file=sys.stderr)
+        sys.exit(1)
+    
+    # Calculate target gap size based on percent remaining
+    target_gap_size = int(total_length * (1 - percent_remaining / 100.0))
+    target_remaining_length = total_length - target_gap_size
+    
+    if target_gap_size <= 0:
+        print("Error: Percent remaining is too high (>= 100%). No gaps to introduce.", file=sys.stderr)
+        sys.exit(1)
+    
+    print(f"Total genome length: {total_length:,} bp", file=sys.stderr)
+    print(f"Target: {percent_remaining:.1f}% remaining ({target_remaining_length:,} bp)", file=sys.stderr)
+    print(f"To remove: {target_gap_size:,} bp in gaps", file=sys.stderr)
+    
+    # Iteratively add gaps until we reach the target removal amount
+    # Account for gaps that get truncated at scaffold boundaries
+    gap_lengths = []
+    split_records = None
+    mapping_data = None
+    actual_remaining_length = total_length
+    iteration = 0
+    max_iterations = 100  # Safety limit
+    
+    while actual_remaining_length > target_remaining_length and iteration < max_iterations:
+        iteration += 1
+        
+        # Sample more gaps to close the gap (pun intended)
+        needed_removal = actual_remaining_length - target_remaining_length
+        
+        # Sample gaps totaling the needed amount (with some buffer for truncation)
+        new_gaps = []
+        new_gap_total = 0
+        buffer_factor = 1.2  # Oversample by 20% to account for truncation
+        
+        while new_gap_total < needed_removal * buffer_factor:
+            new_gap = sample_gap_lengths(1, alpha, beta, min_size, max_size)[0]
+            if new_gap_total + new_gap <= needed_removal * buffer_factor * 1.2:
+                new_gaps.append(new_gap)
+                new_gap_total += new_gap
+            else:
+                break
+        
+        gap_lengths.extend(new_gaps)
+        
+        # Place all gaps and calculate actual removal
+        split_records, mapping_data = apply_gaps(records, gap_lengths, total_length)
+        
+        # Calculate actual remaining length
+        actual_remaining_length = sum(len(rec.seq) for rec in split_records)
+        
+        # If we're within 1% of target, we're done
+        actual_percent = (actual_remaining_length / total_length) * 100
+        if abs(actual_percent - percent_remaining) < 1.0:
+            break
+    
+    # Final statistics
+    num_gaps = len(gap_lengths)
+    actual_removed = total_length - actual_remaining_length
+    actual_percent_remaining = (actual_remaining_length / total_length) * 100
+    
+    print(f"Introduced {num_gaps} gaps (converged in {iteration} iteration(s))...", file=sys.stderr)
+    print(f"Gap length statistics:", file=sys.stderr)
+    print(f"  Min: {min(gap_lengths)} bp", file=sys.stderr)
+    print(f"  Max: {max(gap_lengths)} bp", file=sys.stderr)
+    print(f"  Mean: {np.mean(gap_lengths):.1f} bp", file=sys.stderr)
+    print(f"  Median: {np.median(gap_lengths):.1f} bp", file=sys.stderr)
+    print(f"  Sampled total: {sum(gap_lengths):,} bp", file=sys.stderr)
+    print(f"  Actually removed: {actual_removed:,} bp", file=sys.stderr)
+    print(f"  Actual genome remaining: {actual_percent_remaining:.2f}%", file=sys.stderr)
+    
+    # Print per-sequence statistics
+    for record in split_records:
+        if not record.id.endswith('_0') and '_' not in record.id:
+            # Unsplit sequence
+            print(f"  {record.id}: {len(record.seq):,} bp -> 1 contig (no gaps)", file=sys.stderr)
+    
+    # Count splits per original sequence
+    from collections import defaultdict
+    seq_fragments = defaultdict(list)
+    for record in split_records:
+        orig_id = record.id.rsplit('_', 1)[0] if '_' in record.id and record.id.split('_')[-1].isdigit() else record.id
+        seq_fragments[orig_id].append(record)
+    
+    for orig_id, fragments in seq_fragments.items():
+        if len(fragments) > 1:
+            total_len = sum(len(f.seq) for f in fragments)
+            # Find original length from records
+            orig_len = next((len(r.seq) for r in records if r.id == orig_id), 0)
+            num_gaps_in_seq = len(fragments) - 1
+            print(f"  {orig_id}: {orig_len:,} bp -> {len(fragments)} contigs, {total_len:,} bp total ({num_gaps_in_seq} gaps)", file=sys.stderr)
+    
+    return split_records, mapping_data
 
 
 def main():
@@ -495,7 +575,7 @@ def main():
         print("\nSkipping mutations (rate = 0.0)", file=sys.stderr)
     
     # Introduce gaps by splitting sequences
-    modified_records = introduce_gaps(
+    modified_records, mapping_data = introduce_gaps(
         records,
         args.percent_remaining,
         args.alpha,
@@ -510,6 +590,16 @@ def main():
             print(f"\nWriting output to {args.output}...", file=sys.stderr)
             SeqIO.write(modified_records, args.output, "fasta")
             print("Done!", file=sys.stderr)
+            
+            # Write mapping file
+            mapping_file = args.output + ".mapping"
+            print(f"Writing mapping file to {mapping_file}...", file=sys.stderr)
+            with open(mapping_file, 'w') as f:
+                f.write("# Position mapping: original -> gapped genome\n")
+                f.write("# Format: original_seq_id\toriginal_start\toriginal_end\tnew_seq_id\tnew_start\tnew_end\n")
+                for orig_id, orig_start, orig_end, new_id, new_start, new_end in mapping_data:
+                    f.write(f"{orig_id}\t{orig_start}\t{orig_end}\t{new_id}\t{new_start}\t{new_end}\n")
+            print("Done!", file=sys.stderr)
         else:
             print(f"\nWriting output to stdout...", file=sys.stderr)
             # Write to stdout without trailing newline
@@ -521,6 +611,12 @@ def main():
             if output.endswith('\n'):
                 output = output[:-1]
             sys.stdout.write(output)
+            
+            # Write mapping to stderr when output goes to stdout
+            print("\n# Position mapping (original -> gapped):", file=sys.stderr)
+            print("# original_seq_id\toriginal_start\toriginal_end\tnew_seq_id\tnew_start\tnew_end", file=sys.stderr)
+            for orig_id, orig_start, orig_end, new_id, new_start, new_end in mapping_data:
+                print(f"{orig_id}\t{orig_start}\t{orig_end}\t{new_id}\t{new_start}\t{new_end}", file=sys.stderr)
     except Exception as e:
         print(f"Error writing output: {e}", file=sys.stderr)
         sys.exit(1)

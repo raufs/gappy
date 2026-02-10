@@ -10,10 +10,10 @@ readme = "README.md"
 requires-python = ">=3.7"
 license = {text = "BSD3"}
 authors = [
-    {name = "Gappy Contributors"},
+    {name = "Rauf Salamzade"},
 ]
 keywords = ["bioinformatics", "genomics", "assembly", "errors", "gaps", "simulation"]
-dependencies = [biopython, numpy]
+dependencies = ["biopython>=1.79", "numpy>=1.21.0"]
 
 [project.urls]
 Homepage = "https://github.com/raufs/gappy"

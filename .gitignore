@@ -212,6 +212,7 @@ test*.fasta
 *_gapped.fasta
 *_gaps.fasta
 small_gaps.fasta
+*.mapping
 setup.py.old
 *.whl
 dist/
