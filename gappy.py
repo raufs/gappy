@@ -69,7 +69,7 @@ def parse_arguments():
         "--max-gap-size",
         type=int,
         default=1000000,
-        help="Maximum gap size in base pairs. Default: 1000000 (1 Mbp, allows gaps up to 1 million)"
+        help="Maximum gap size in base pairs. Default: 1000000 (1 Mbp)"
     )
     
     parser.add_argument(

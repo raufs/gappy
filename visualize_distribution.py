@@ -28,7 +28,7 @@ np.random.seed(42)
 gap_lengths = sample_gap_lengths(10000)
 
 # Create figure
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+fig, ax = plt.subplots(1, 1, figsize=(9, 6))
 
 # Format function for axis labels
 def format_bp(x, pos):
@@ -39,36 +39,21 @@ def format_bp(x, pos):
     else:
         return f'{int(x)}'
 
-# Left plot: Linear scale histogram
-ax1.hist(gap_lengths, bins=100, edgecolor='black', alpha=0.7, color='steelblue')
-ax1.set_xlabel('Gap Length (bp)', fontsize=11)
-ax1.set_ylabel('Frequency', fontsize=11)
-ax1.set_title('Gap Length Distribution\n(Linear Scale)', fontsize=12, fontweight='bold')
-ax1.xaxis.set_major_formatter(FuncFormatter(format_bp))
-ax1.grid(True, alpha=0.3)
+# Histogram
+ax.hist(gap_lengths, bins=100, edgecolor='black', alpha=0.7, color='steelblue')
+ax.set_xlabel('Gap Length (bp)', fontsize=12)
+ax.set_ylabel('Frequency', fontsize=12)
+ax.set_title('GAPPY Default Gap Length Distribution', fontsize=14, fontweight='bold')
+ax.xaxis.set_major_formatter(FuncFormatter(format_bp))
+ax.grid(True, alpha=0.3)
 
 # Add statistics text box
-stats_text = f'Parameters:\nα = {ALPHA}\nβ = {BETA}\n\nStatistics:\nMean: {np.mean(gap_lengths)/1e3:.1f}k bp\nMedian: {np.median(gap_lengths)/1e3:.1f}k bp\nMode ≈ 10k bp'
-ax1.text(0.65, 0.97, stats_text, transform=ax1.transAxes,
-         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
-         fontsize=9, family='monospace')
+stats_text = f'Parameters:\nα = {ALPHA}\nβ = {BETA}\nRange: [{MIN_GAP_SIZE} bp, {MAX_GAP_SIZE/1e6:.0f}M bp]\n\nStatistics:\nMean: {np.mean(gap_lengths)/1e3:.1f}k bp\nMedian: {np.median(gap_lengths)/1e3:.1f}k bp\nMode ≈ 10k bp'
+ax.text(0.98, 0.97, stats_text, transform=ax.transAxes,
+         verticalalignment='top', horizontalalignment='right',
+         bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.85),
+         fontsize=10, family='monospace')
 
-# Right plot: Log scale histogram
-ax2.hist(gap_lengths, bins=100, edgecolor='black', alpha=0.7, color='coral')
-ax2.set_xlabel('Gap Length (bp, log scale)', fontsize=11)
-ax2.set_ylabel('Frequency', fontsize=11)
-ax2.set_title('Gap Length Distribution\n(Log Scale)', fontsize=12, fontweight='bold')
-ax2.set_xscale('log')
-ax2.xaxis.set_major_formatter(FuncFormatter(format_bp))
-ax2.grid(True, alpha=0.3, which='both')
-
-# Add range text box
-range_text = f'Range:\n[{MIN_GAP_SIZE} bp, {MAX_GAP_SIZE/1e6:.0f}M bp]'
-ax2.text(0.05, 0.97, range_text, transform=ax2.transAxes,
-         verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8),
-         fontsize=9, family='monospace')
-
-plt.suptitle('GAPPY Default Gap Length Distribution', fontsize=14, fontweight='bold', y=1.02)
 plt.tight_layout()
 
 # Save figure
