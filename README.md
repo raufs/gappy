@@ -33,7 +33,7 @@ pip install .
 ### Basic usage
 
 ```bash
-python gappy.py input_genome.fasta -o fragmented_output.fasta -p 80
+gappy input_genome.fasta -o fragmented_output.fasta -p 80
 ```
 
 This will remove ~20% of the genome by splitting sequences, leaving 80% intact. Uses smart defaults (peak at ~10kb, gaps up to 1Mbp).
