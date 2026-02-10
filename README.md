@@ -18,7 +18,6 @@ Instead of inserting gap characters (N's), gappy splits your sequences into mult
   - **Ts/Tv ratio control**: Adjustable transition/transversion ratio (default: 2.0)
   - Biologically realistic mutation patterns
 - Sample gap lengths from a beta distribution with customizable parameters
-- Split sequences at random positions to simulate gaps
 - Automatic contig renaming (e.g., chr1 → chr1_0, chr1_1, chr1_2, etc.)
 - Reproducible results with random seed option
 - Detailed statistics on mutations (including Ts/Tv) and introduced gaps
