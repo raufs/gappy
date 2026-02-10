@@ -8,34 +8,17 @@ version = "1.0.0"
 description = "A tool for simulating worse quality (mainly bacterial) genome assemblies."
 readme = "README.md"
 requires-python = ">=3.7"
-license = {text = "MIT"}
+license = {text = "BSD3"}
 authors = [
     {name = "Gappy Contributors"},
 ]
-keywords = ["bioinformatics", "genomics", "assembly", "mutations", "gaps", "simulation"]
-classifiers = [
-    "Development Status :: 4 - Beta",
-    "Intended Audience :: Science/Research",
-    "Topic :: Scientific/Engineering :: Bio-Informatics",
-    "License :: OSI Approved :: MIT License",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
-]
-dependencies = [
-    "biopython>=1.79",
-    "numpy>=1.21.0",
-]
+keywords = ["bioinformatics", "genomics", "assembly", "errors", "gaps", "simulation"]
+dependencies = [biopython, numpy]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/gappy"
-Repository = "https://github.com/yourusername/gappy"
-Issues = "https://github.com/yourusername/gappy/issues"
-Documentation = "https://github.com/yourusername/gappy#readme"
+Homepage = "https://github.com/raufs/gappy"
+Repository = "https://github.com/raufs/gappy"
+Issues = "https://github.com/raufs/gappy/issues"
 
 [project.scripts]
 gappy = "gappy:main"
