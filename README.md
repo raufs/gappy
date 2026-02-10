@@ -5,34 +5,20 @@ A genome assembly gap simulator that splits contigs/scaffolds at random position
 > [!NOTE]
 > This is a pretty naive implementation for the task largely written using AI. A more realistic simulation of worsening assembly quality can be achieved by downsampling sequencing reads and performing re-assembly. This however requires sequencing reads to be available and is more involved computationally.
 
-## Documentation
-
-- **[Quick Start Guide](QUICKSTART.md)** - Get started in 5 minutes
-- **[Installation Guide](INSTALL.md)** - Detailed installation options
-- **[Usage Examples](USAGE_EXAMPLES.md)** - Comprehensive usage examples
-
 ## Overview
 
-`gappy` is a Python tool designed to simulate gaps in genome assemblies for testing and benchmarking purposes. It takes a genome file in FASTA format and splits sequences at random positions to create fragmented assemblies, with gap lengths controlled by a beta distribution.
+`gappy` is a Python tool designed to simulate gaps and sequencing errors in genome assemblies for testing and benchmarking purposes of other bioinformatics software. It takes a genome file in FASTA format and splits sequences at random positions to create fragmented assemblies, with gap lengths controlled by a beta distribution.
 
 Instead of inserting gap characters (N's), gappy splits your sequences into multiple smaller contigs, simulating real assembly fragmentation.
-
-Perfect for:
-- Testing gap-filling and scaffolding algorithms
-- Benchmarking assembly tools
-- Creating controlled test datasets
-- Simulating draft assembly fragmentation
-- Generating fragmented references for alignment testing
 
 ## Features
 
 - Read and write FASTA files using BioPython
-- **Point mutations**: Optional mutation rate to introduce SNPs before gap simulation
+- **Sequencing Error simulation:**: Optional mutation rate to introduce "sequencing errors" or "mutations" before fragmenting/introducing gaps.
   - **Ts/Tv ratio control**: Adjustable transition/transversion ratio (default: 2.0)
   - Biologically realistic mutation patterns
 - Sample gap lengths from a beta distribution with customizable parameters
 - Split sequences at random positions to simulate gaps
-- Proportionally distribute gaps across multiple sequences
 - Automatic contig renaming (e.g., chr1 → chr1_0, chr1_1, chr1_2, etc.)
 - Reproducible results with random seed option
 - Detailed statistics on mutations (including Ts/Tv) and introduced gaps
@@ -220,15 +206,10 @@ The program outputs:
   - Number of fragments created
   - Total sequence length preserved
 
-### Example Output
-
-Input: 1 sequence "chr1" (1000 bp)  
-Output: 4 sequences "chr1_0", "chr1_1", "chr1_2", "chr1_3" (totaling 1000 bp)
-
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the G License - see the LICENSE file for details.
 
 ## Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions are welcome! Please feel free to submit a Pull Request or open an Issue.
