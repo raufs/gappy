@@ -345,26 +345,38 @@ def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
     print(f"  Total gap length: {sum(gap_lengths):,} bp", file=sys.stderr)
     print(f"  Actual genome remaining: {actual_percent_remaining:.2f}%", file=sys.stderr)
     
-    # Assign gaps to sequences proportionally to their lengths
+    # Sample random gap positions across the entire genome
+    # (not proportionally - gaps fall randomly wherever they may)
+    genome_gap_positions = sorted(random.sample(range(1, total_length), min(num_gaps, total_length - 1)))
+    
+    # Map genome positions to sequence-specific positions
+    seq_gaps = {}  # {record_index: [(local_position, gap_length), ...]}
+    cumulative_length = 0
+    
+    for idx, record in enumerate(records):
+        seq_gaps[idx] = []
+        seq_start = cumulative_length
+        seq_end = cumulative_length + len(record.seq)
+        
+        for gap_idx, genome_pos in enumerate(genome_gap_positions):
+            if seq_start < genome_pos <= seq_end:
+                local_pos = genome_pos - seq_start
+                seq_gaps[idx].append((local_pos, gap_lengths[gap_idx]))
+        
+        cumulative_length = seq_end
+    
+    # Apply gaps to each sequence
     split_records = []
     
-    for record in records:
-        seq_length = len(record.seq)
-        
-        # Determine how many gaps go into this sequence (proportional allocation)
-        num_gaps_in_seq = int(round(num_gaps * seq_length / total_length))
-        
-        if num_gaps_in_seq == 0:
-            # Keep the sequence as is if no gaps are assigned
+    for idx, record in enumerate(records):
+        if not seq_gaps[idx]:
+            # No gaps in this sequence, keep as is
             split_records.append(record)
+            print(f"  {record.id}: {len(record.seq):,} bp -> 1 contig (no gaps)", file=sys.stderr)
             continue
         
-        # Sample random positions in this sequence
-        positions = sorted(random.sample(range(1, seq_length), min(num_gaps_in_seq, seq_length - 1)))
-        
-        # Get corresponding gap lengths (for statistics/logging)
-        seq_gap_lengths = gap_lengths[:num_gaps_in_seq]
-        gap_lengths = gap_lengths[num_gaps_in_seq:]  # Remove used gaps
+        # Extract positions and lengths for this sequence
+        positions, seq_gap_lengths = zip(*seq_gaps[idx])
         
         # Split sequence at gap positions
         fragments = split_sequence_at_gaps(record.seq, positions, seq_gap_lengths)
@@ -381,7 +393,7 @@ def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
             split_records.append(fragment_record)
             total_fragment_length += len(fragment)
         
-        print(f"  {record.id}: {len(record.seq):,} bp -> {len(fragments)} contigs, {total_fragment_length:,} bp total ({num_gaps_in_seq} gaps)", file=sys.stderr)
+        print(f"  {record.id}: {len(record.seq):,} bp -> {len(fragments)} contigs, {total_fragment_length:,} bp total ({len(seq_gaps[idx])} gaps)", file=sys.stderr)
     
     return split_records
 
