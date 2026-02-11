@@ -93,3 +93,6 @@ The default parameters (α=1.09, β=10.0, range=[1, 1M bp]) create a heavily rig
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+> [!IMPORTANT]
+> Other names considered for this repo include craps (to make a pun off SPAdes) and genoBad (genNomad pun). 
