@@ -3,7 +3,7 @@
 A genome assembly gap simulator that splits contigs/scaffolds at random positions to simulate gaps with gap lengths sampled from a beta distribution. It can also simulate sequencing errors.
 
 > [!NOTE]
-> This is a pretty naive implementation for the task largely written using AI. A more realistic simulation of worsening assembly quality can be achieved by downsampling sequencing reads and reperforming assembly. That however requires sequencing reads to be available and is more involved computationally.
+> This is a pretty naive implementation for the task largely written using AI. A more realistic simulation of worsening assembly quality can be achieved by downsampling sequencing reads and reperforming assembly. That however requires sequencing reads to be available, is more involved computationally, and is less straightforward to perform if working with MAGs.
 
 ## Overview
 
