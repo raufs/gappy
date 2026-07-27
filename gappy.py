@@ -182,17 +182,21 @@ def introduce_mutations(records, mutation_rate, ts_tv_ratio=2.0):
             mutated_records.append(record)
             continue
         
-        # Randomly select positions to mutate (uniformly distributed)
-        # Filter to only mutable positions (standard nucleotides)
-        mutable_positions = [i for i in range(seq_length) if seq_list[i] in mutations_map]
-        
-        if len(mutable_positions) == 0:
+        # Randomly select positions to mutate (uniformly distributed).
+        # Filter to only mutable positions (standard nucleotides) using a
+        # vectorized numpy mask instead of a per-base Python loop, since the
+        # latter is a memory/CPU bottleneck on chromosome/genome-scale inputs
+        seq_bytes = np.frombuffer(seq_str.encode('ascii'), dtype='S1')
+        mutable_bases = np.array(list(mutations_map.keys()), dtype='S1')
+        mutable_positions = np.flatnonzero(np.isin(seq_bytes, mutable_bases))
+
+        if mutable_positions.size == 0:
             mutated_records.append(record)
             continue
-        
+
         # Randomly sample positions without replacement
-        num_mutations = min(expected_mutations, len(mutable_positions))
-        mutation_positions = random.sample(mutable_positions, num_mutations)
+        num_mutations = min(expected_mutations, mutable_positions.size)
+        mutation_positions = np.random.choice(mutable_positions, size=num_mutations, replace=False)
         
         mutations_in_seq = 0
         transitions_in_seq = 0
@@ -239,41 +243,50 @@ def introduce_mutations(records, mutation_rate, ts_tv_ratio=2.0):
 def split_sequence_at_gaps(sequence, gap_positions, gap_lengths):
     """
     Split a sequence at specified gap positions, removing the gap regions.
-    
+
     Args:
         sequence: Original sequence string
         gap_positions: List of positions where gaps should start (sorted)
         gap_lengths: List of gap lengths corresponding to each position
-    
+
     Returns:
-        List of sequence fragments after removing gaps
+        List of (fragment, original_start) tuples, where original_start is the
+        1-based position of the fragment's first base in the original sequence.
     """
     seq_str = str(sequence)
-    
+
     if not gap_positions:
-        return [seq_str]
-    
+        return [(seq_str, 1)]
+
     # Sort positions and corresponding lengths together
     gaps = sorted(zip(gap_positions, gap_lengths))
-    
-    # Create fragments by removing gap regions
+
+    # Create fragments by removing gap regions, tracking each fragment's
+    # original 1-based start position alongside it so the two can never
+    # drift out of sync (e.g. if a gap produces a zero-length fragment)
     fragments = []
     start = 0
-    
+    orig_start = 1
+
     for pos, gap_len in gaps:
         if pos > start:
             # Add fragment from start to gap position
-            fragments.append(seq_str[start:pos])
-        # Skip over the gap region - next fragment starts after the gap
-        start = pos + gap_len
-    
+            fragments.append((seq_str[start:pos], orig_start))
+
+        # Skip over the gap region - next fragment starts after the gap.
+        # Overlapping/nested gaps must merge into one continuous removed
+        # region, so only extend start/orig_start if this gap's end goes
+        # further than what's already been removed - otherwise a gap fully
+        # nested inside an earlier one would wrongly un-delete bases.
+        gap_end = pos + gap_len
+        if gap_end > start:
+            start = gap_end
+            orig_start = gap_end + 1
+
     # Add final fragment if there's sequence remaining
     if start < len(seq_str):
-        fragments.append(seq_str[start:])
-    
-    # Filter out empty fragments
-    fragments = [f for f in fragments if len(f) > 0]
-    
+        fragments.append((seq_str[start:], orig_start))
+
     return fragments
 
 
@@ -324,41 +337,35 @@ def apply_gaps(records, gap_lengths, total_length):
         
         # Extract positions and lengths for this sequence
         positions, seq_gap_lengths = zip(*seq_gaps[idx])
-        
-        # Split sequence at gap positions
+
+        # Split sequence at gap positions; each fragment carries its own
+        # original 1-based start position, computed in the same pass
         fragments = split_sequence_at_gaps(record.seq, positions, seq_gap_lengths)
-        
-        # Track original positions for mapping
-        gaps_with_pos = sorted(zip(positions, seq_gap_lengths))
-        
-        # Calculate fragment ranges in original sequence
-        orig_start = 1
-        new_pos = 1
-        
+
+        # Preserve any extra metadata from the original description
+        original_desc = record.description
+        extra_desc = original_desc[len(record.id):].strip() if original_desc.startswith(record.id) else original_desc
+
         # Create new records for each fragment
-        for i, fragment in enumerate(fragments):
+        for i, (fragment, frag_orig_start) in enumerate(fragments):
             fragment_id = f"{record.id}_{i}"
+            split_note = f"Split from {record.id} (fragment {i+1}/{len(fragments)})"
+            description = f"{split_note} {extra_desc}" if extra_desc else split_note
             fragment_record = SeqRecord(
                 Seq(fragment),
                 id=fragment_id,
-                description=f"Split from {record.id} (fragment {i+1}/{len(fragments)})"
+                description=description
             )
             split_records.append(fragment_record)
-            
+
             # Determine original coordinates for this fragment
             fragment_len = len(fragment)
-            orig_end = orig_start + fragment_len - 1
-            new_end = new_pos + fragment_len - 1
-            
-            # Add mapping entry
-            mapping_data.append((record.id, orig_start, orig_end, fragment_id, new_pos, new_end))
-            
-            # Update positions for next fragment
-            if i < len(gaps_with_pos):
-                gap_start, gap_len = gaps_with_pos[i]
-                orig_start = gap_start + gap_len
-            new_pos = 1
-    
+            orig_end = frag_orig_start + fragment_len - 1
+
+            # Add mapping entry (new coordinates are always relative to the
+            # fragment itself, since each fragment is its own output record)
+            mapping_data.append((record.id, frag_orig_start, orig_end, fragment_id, 1, fragment_len))
+
     return split_records, mapping_data
 
 
@@ -407,38 +414,44 @@ def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
     iteration = 0
     max_iterations = 100  # Safety limit
     
+    actual_percent = (actual_remaining_length / total_length) * 100
+
     while actual_remaining_length > target_remaining_length and iteration < max_iterations:
         iteration += 1
-        
+
         # Sample more gaps to close the gap (pun intended)
         needed_removal = actual_remaining_length - target_remaining_length
-        
-        # Sample gaps totaling the needed amount (with some buffer for truncation)
+
+        # Sample gaps totaling the needed amount (with some buffer for truncation
+        # at scaffold boundaries); overshooting is harmless since actual removal
+        # is re-measured from the real placement below
+        buffer_factor = 1.2
+        target_new_gap_total = needed_removal * buffer_factor
+
         new_gaps = []
         new_gap_total = 0
-        buffer_factor = 1.2  # Oversample by 20% to account for truncation
-        
-        while new_gap_total < needed_removal * buffer_factor:
+        while new_gap_total < target_new_gap_total:
             new_gap = sample_gap_lengths(1, alpha, beta, min_size, max_size)[0]
-            if new_gap_total + new_gap <= needed_removal * buffer_factor * 1.2:
-                new_gaps.append(new_gap)
-                new_gap_total += new_gap
-            else:
-                break
-        
+            new_gaps.append(new_gap)
+            new_gap_total += new_gap
+
         gap_lengths.extend(new_gaps)
-        
+
         # Place all gaps and calculate actual removal
         split_records, mapping_data = apply_gaps(records, gap_lengths, total_length)
-        
+
         # Calculate actual remaining length
         actual_remaining_length = sum(len(rec.seq) for rec in split_records)
-        
+
         # If we're within 1% of target, we're done
         actual_percent = (actual_remaining_length / total_length) * 100
         if abs(actual_percent - percent_remaining) < 1.0:
             break
-    
+
+    if abs(actual_percent - percent_remaining) >= 1.0:
+        print(f"Warning: stopped after {iteration} iteration(s) without reaching within 1% of "
+              f"target (actual: {actual_percent:.2f}%, target: {percent_remaining:.1f}%)", file=sys.stderr)
+
     # Final statistics
     num_gaps = len(gap_lengths)
     actual_removed = total_length - actual_remaining_length
@@ -454,26 +467,22 @@ def introduce_gaps(records, percent_remaining, alpha, beta, min_size, max_size):
     print(f"  Actually removed: {actual_removed:,} bp", file=sys.stderr)
     print(f"  Actual genome remaining: {actual_percent_remaining:.2f}%", file=sys.stderr)
     
-    # Print per-sequence statistics
-    for record in split_records:
-        if not record.id.endswith('_0') and '_' not in record.id:
-            # Unsplit sequence
-            print(f"  {record.id}: {len(record.seq):,} bp -> 1 contig (no gaps)", file=sys.stderr)
-    
-    # Count splits per original sequence
+    # Print per-sequence statistics, grouped by the ground-truth orig_id
+    # recorded in mapping_data (rather than guessing parentage from fragment
+    # ID suffixes, which breaks on original IDs that already end in digits)
     from collections import defaultdict
-    seq_fragments = defaultdict(list)
-    for record in split_records:
-        orig_id = record.id.rsplit('_', 1)[0] if '_' in record.id and record.id.split('_')[-1].isdigit() else record.id
-        seq_fragments[orig_id].append(record)
-    
-    for orig_id, fragments in seq_fragments.items():
-        if len(fragments) > 1:
-            total_len = sum(len(f.seq) for f in fragments)
-            # Find original length from records
+    seq_fragment_lengths = defaultdict(list)
+    for orig_id, _, _, _, new_start, new_end in mapping_data:
+        seq_fragment_lengths[orig_id].append(new_end - new_start + 1)
+
+    for orig_id, fragment_lengths in seq_fragment_lengths.items():
+        if len(fragment_lengths) == 1:
+            print(f"  {orig_id}: {fragment_lengths[0]:,} bp -> 1 contig (no gaps)", file=sys.stderr)
+        else:
             orig_len = next((len(r.seq) for r in records if r.id == orig_id), 0)
-            num_gaps_in_seq = len(fragments) - 1
-            print(f"  {orig_id}: {orig_len:,} bp -> {len(fragments)} contigs, {total_len:,} bp total ({num_gaps_in_seq} gaps)", file=sys.stderr)
+            total_len = sum(fragment_lengths)
+            num_gaps_in_seq = len(fragment_lengths) - 1
+            print(f"  {orig_id}: {orig_len:,} bp -> {len(fragment_lengths)} contigs, {total_len:,} bp total ({num_gaps_in_seq} gaps)", file=sys.stderr)
     
     return split_records, mapping_data
 

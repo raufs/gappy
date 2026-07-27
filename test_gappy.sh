@@ -15,7 +15,7 @@ mv GCF_000005845.2_ASM584v2_genomic.fna example_genome.fasta
 
 # Test 1: High quality (90% remaining)
 echo "Test 1: High quality assembly (90% genome remains)"
-gappy example_genome.fasta -o test1_high_quality.fasta -p 90 --seed 42
+gappy example_genome.fasta -o test1_high_quality_v2.fasta -p 90 --seed 52
 echo
 
 # Test 2: Moderate quality (70% remaining)
